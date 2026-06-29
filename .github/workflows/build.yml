@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install dependencies
+      - name: Install Node dependencies
         run: npm install --legacy-peer-deps
 
       - name: Setup Android SDK
@@ -39,13 +39,23 @@ jobs:
           wget -q "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -O cmdtools.zip
           unzip -q cmdtools.zip -d $ANDROID_SDK_ROOT/cmdline-tools
           mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
-          export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT"     >> $GITHUB_ENV
           echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+          echo "$ANDROID_SDK_ROOT/platform-tools"           >> $GITHUB_PATH
           yes | sdkmanager --licenses || true
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25.1.8937393"
+
+      - name: Bundle React Native JS
+        run: |
+          mkdir -p android/app/src/main/assets
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res
+          echo "Bundle size: $(wc -c < android/app/src/main/assets/index.android.bundle) bytes"
 
       - name: Generate Keystores
         run: |
@@ -75,37 +85,55 @@ jobs:
       - name: Build Release APK
         run: |
           cd android
-          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tail -100
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tail -150
         env:
           JAVA_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
 
-      - name: Find APK
-        run: find android -name "*.apk" -type f
+      - name: Verify and Rename APK
+        run: |
+          echo "=== Searching for APKs ==="
+          find android -name "*.apk" -type f -exec ls -lh {} \;
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: No APK found!"
+            exit 1
+          fi
+          SIZE=$(wc -c < "$APK")
+          echo "APK found: $APK ($SIZE bytes)"
+          if [ "$SIZE" -lt 1000000 ]; then
+            echo "ERROR: APK too small ($SIZE bytes) — build likely failed silently"
+            exit 1
+          fi
+          cp "$APK" MobileCloud-release.apk
+          echo "APK_PATH=MobileCloud-release.apk" >> $GITHUB_ENV
+          echo "APK_SIZE=$(ls -lh MobileCloud-release.apk | awk '{print $5}')" >> $GITHUB_ENV
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MobileCloud-APK
-          path: android/app/build/outputs/apk/release/*.apk
+          path: MobileCloud-release.apk
           retention-days: 30
 
       - name: Create GitHub Release
-        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.run_number }}
-          name: MobileCloud v${{ github.run_number }}
+          tag_name: build-${{ github.run_number }}
+          name: "MobileCloud APK — Build ${{ github.run_number }}"
           body: |
             ## ☁ MobileCloud Android APK
 
+            **Size:** ${{ env.APK_SIZE }}
             **Build:** #${{ github.run_number }}
             **Commit:** ${{ github.sha }}
 
-            ### Install
-            1. Download `MobileCloud-release.apk`
-            2. Enable "Install from unknown sources" on Android
-            3. Install and launch
-
-          files: android/app/build/outputs/apk/release/*.apk
+            ### Install Instructions
+            1. Download `MobileCloud-release.apk` below
+            2. On Android: Settings → Security → Enable **Install unknown apps**
+            3. Open the downloaded APK → Install
+            4. Launch **MobileCloud**
+          files: MobileCloud-release.apk
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
