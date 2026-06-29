@@ -13,56 +13,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 18
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
 
       - name: Install dependencies
-        run: npm ci --legacy-peer-deps
+        run: npm install --legacy-peer-deps
 
-      - name: Install Expo modules
-        run: npx install-expo-modules@latest --yes || true
-
-      - name: Generate release keystore
+      - name: Setup Android SDK
         run: |
-          if [ ! -f android/app/release.keystore ]; then
-            keytool -genkeypair \
-              -v \
-              -storetype PKCS12 \
-              -keystore android/app/release.keystore \
-              -alias mobilecloud \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass mobilecloud123 \
-              -keypass mobilecloud123 \
-              -dname "CN=MobileCloud, OU=Dev, O=MobileCloud, L=US, ST=US, C=US"
-          fi
-          # Also create debug keystore
-          if [ ! -f android/app/debug.keystore ]; then
-            keytool -genkeypair \
-              -v \
-              -storetype PKCS12 \
-              -keystore android/app/debug.keystore \
-              -alias androiddebugkey \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass android \
-              -keypass android \
-              -dname "CN=Android Debug, O=Android, C=US"
-          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y wget unzip
+          ANDROID_SDK_ROOT=$HOME/android-sdk
+          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          wget -q "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -O cmdtools.zip
+          unzip -q cmdtools.zip -d $ANDROID_SDK_ROOT/cmdline-tools
+          mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
+          export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25.1.8937393"
+
+      - name: Generate Keystores
+        run: |
+          keytool -genkeypair -v -storetype PKCS12 \
+            -keystore android/app/release.keystore \
+            -alias mobilecloud -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass mobilecloud123 -keypass mobilecloud123 \
+            -dname "CN=MobileCloud,OU=Dev,O=MobileCloud,L=US,ST=US,C=US"
+          keytool -genkeypair -v -storetype PKCS12 \
+            -keystore android/app/debug.keystore \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US"
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
@@ -79,12 +72,13 @@ jobs:
       - name: Build Release APK
         run: |
           cd android
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tail -100
         env:
-          JAVA_OPTS: "-Xmx4g"
+          JAVA_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
 
       - name: Find APK
-        run: find android -name "*.apk" -type f
+        run: find android -name "*.apk" -type f 2>/dev/null || echo "No APK found"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -92,14 +86,15 @@ jobs:
           name: MobileCloud-APK
           path: android/app/build/outputs/apk/release/*.apk
           retention-days: 30
+          if-no-files-found: warn
 
       - name: Create GitHub Release
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: MobileCloud v${{ github.run_number }}
-          body: "Android APK build from commit ${{ github.sha }}"
+          body: "Android APK — commit ${{ github.sha }}"
           files: android/app/build/outputs/apk/release/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
