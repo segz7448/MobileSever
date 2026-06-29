@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -75,10 +78,9 @@ jobs:
           ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tail -100
         env:
           JAVA_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
 
       - name: Find APK
-        run: find android -name "*.apk" -type f 2>/dev/null || echo "No APK found"
+        run: find android -name "*.apk" -type f
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -86,15 +88,24 @@ jobs:
           name: MobileCloud-APK
           path: android/app/build/outputs/apk/release/*.apk
           retention-days: 30
-          if-no-files-found: warn
 
       - name: Create GitHub Release
-        if: github.ref == 'refs/heads/main' && success()
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: MobileCloud v${{ github.run_number }}
-          body: "Android APK — commit ${{ github.sha }}"
+          body: |
+            ## ☁ MobileCloud Android APK
+
+            **Build:** #${{ github.run_number }}
+            **Commit:** ${{ github.sha }}
+
+            ### Install
+            1. Download `MobileCloud-release.apk`
+            2. Enable "Install from unknown sources" on Android
+            3. Install and launch
+
           files: android/app/build/outputs/apk/release/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
