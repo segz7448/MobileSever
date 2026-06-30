@@ -30,16 +30,6 @@ jobs:
       - name: Install Node dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Show installed packages
-        run: |
-          echo "=== Key packages ==="
-          node -e "
-            const deps = require('./package.json').dependencies;
-            Object.entries(deps).forEach(([k,v]) => console.log(k, v));
-          "
-          echo "=== node_modules count ==="
-          ls node_modules | wc -l
-
       - name: Setup Android SDK
         run: |
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
@@ -49,32 +39,26 @@ jobs:
       - name: Bundle React Native JS
         run: |
           mkdir -p android/app/src/main/assets
-          set -o pipefail
           npx react-native bundle \
             --platform android \
             --dev false \
             --entry-file index.js \
             --bundle-output android/app/src/main/assets/index.android.bundle \
             --assets-dest android/app/src/main/res \
-            2>&1 | tee bundle.log
-          echo "=== Bundle result ==="
-          ls -lh android/app/src/main/assets/index.android.bundle 2>/dev/null || echo "NO BUNDLE FILE"
+            2>&1 | tee bundle.log || {
+              echo "::error title=Bundle Failed::$(cat bundle.log)"
+              echo "=== FULL BUNDLE ERROR ==="
+              cat bundle.log
+              exit 1
+            }
           BUNDLE_SIZE=$(wc -c < android/app/src/main/assets/index.android.bundle 2>/dev/null || echo 0)
           echo "Bundle size: ${BUNDLE_SIZE} bytes"
           if [ "${BUNDLE_SIZE}" -lt 10000 ]; then
-            echo "=== FULL BUNDLE LOG ==="
+            echo "::error title=Bundle Too Small::$(cat bundle.log)"
             cat bundle.log
-            echo "=== ERROR: Bundle too small ==="
             exit 1
           fi
-
-      - name: Upload bundle log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: bundle-log
-          path: bundle.log
-          retention-days: 7
+          echo "✓ Bundle OK"
 
       - name: Generate Keystores
         run: |
@@ -122,12 +106,12 @@ jobs:
           APK=$(find android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -1)
           [ -z "$APK" ] && echo "ERROR: No APK found" && exit 1
           SIZE=$(wc -c < "$APK")
-          echo "APK size: ${SIZE} bytes"
+          echo "APK: ${SIZE} bytes"
           [ "$SIZE" -lt 1000000 ] && echo "ERROR: APK too small" && exit 1
           cp "$APK" MobileCloud-release.apk
           ls -lh MobileCloud-release.apk
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MobileCloud-APK
