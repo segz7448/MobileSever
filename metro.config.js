@@ -1,13 +1,14 @@
-const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
+const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
 
-/**
- * Metro configuration
- * https://reactnative.dev/docs/metro
- */
+const defaultConfig = getDefaultConfig(__dirname);
+
 const config = {
   resolver: {
-    assetExts: ['bin', 'txt', 'jpg', 'png', 'jpeg', 'gif', 'webp', 'ttf', 'otf', 'woff', 'woff2'],
+    // Disable experimental package exports to fix expo module resolution
+    unstable_enablePackageExports: false,
+    assetExts: [...defaultConfig.resolver.assetExts, 'bin'],
+    sourceExts: [...defaultConfig.resolver.sourceExts],
   },
 };
 
-module.exports = mergeConfig(getDefaultConfig(__dirname), config);
+module.exports = mergeConfig(defaultConfig, config);
