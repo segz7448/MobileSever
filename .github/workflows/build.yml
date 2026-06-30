@@ -30,6 +30,17 @@ jobs:
       - name: Install Node dependencies
         run: npm install --legacy-peer-deps
 
+      - name: Verify gradle plugin path
+        run: |
+          echo "=== Checking @react-native/gradle-plugin ==="
+          ls node_modules/@react-native/gradle-plugin/ || echo "NOT FOUND"
+          echo ""
+          echo "=== build.gradle of plugin ==="
+          cat node_modules/@react-native/gradle-plugin/build.gradle 2>/dev/null || echo "no build.gradle"
+          echo ""
+          echo "=== settings.gradle of plugin ==="
+          cat node_modules/@react-native/gradle-plugin/settings.gradle 2>/dev/null || echo "no settings.gradle"
+
       - name: Setup Android SDK
         run: |
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
@@ -59,17 +70,14 @@ jobs:
           ./gradlew assembleRelease --no-daemon --rerun-tasks --stacktrace > ../gradle_out.log 2>&1
           GRADLE_EXIT=$?
           set -e
-
-          echo "=== GRADLE EXIT CODE: $GRADLE_EXIT ==="
-          echo "=== FIRST 80 LINES (root cause) ==="
-          head -80 ../gradle_out.log
+          echo "=== GRADLE EXIT: $GRADLE_EXIT ==="
+          echo "=== FIRST 100 LINES ==="
+          head -100 ../gradle_out.log
           echo "=== LAST 40 LINES ==="
           tail -40 ../gradle_out.log
-
           if [ $GRADLE_EXIT -ne 0 ]; then
-            # Grab lines containing FAILURE or error keywords for annotation
-            ROOT=$(grep -i "FAILURE\|Exception\|error\|Could not\|failed" ../gradle_out.log | head -20 | tr '\n' ' ' | cut -c1-2500)
-            echo "::error title=GradleRootCause::${ROOT}"
+            ROOT=$(grep -i "FAILURE\|Exception\|error\|Could not\|not found\|sources\|Plugin" ../gradle_out.log | head -30 | tr '\n' ' ' | cut -c1-2500)
+            echo "::error title=GradleError::${ROOT}"
             exit 1
           fi
         env:
@@ -77,18 +85,11 @@ jobs:
 
       - name: Find and Copy APK
         run: |
-          echo "=== APK Search ==="
-          find android -name "*.apk" -type f | while read f; do
-            echo "$f — $(wc -c < $f) bytes"
-          done
+          find android -name "*.apk" -type f | while read f; do echo "$f — $(wc -c < $f) bytes"; done
           APK=$(find android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -1)
           [ -z "$APK" ] && APK=$(find android -name "*.apk" 2>/dev/null | head -1)
-          if [ -z "$APK" ]; then
-            echo "::error title=NoAPK::No APK found"
-            exit 1
-          fi
+          [ -z "$APK" ] && echo "::error title=NoAPK::No APK found" && exit 1
           SIZE=$(wc -c < "$APK")
-          echo "APK: $APK — ${SIZE} bytes"
           [ "$SIZE" -lt 100000 ] && echo "::error title=APKTooSmall::${SIZE} bytes" && exit 1
           cp "$APK" MobileCloud-release.apk
           echo "✓ $(ls -lh MobileCloud-release.apk)"
