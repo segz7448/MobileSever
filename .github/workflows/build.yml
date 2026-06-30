@@ -36,39 +36,6 @@ jobs:
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25.1.8937393"
 
-      - name: Bundle React Native JS
-        run: |
-          mkdir -p android/app/src/main/assets
-          set +e
-          npx react-native bundle \
-            --platform android \
-            --dev false \
-            --entry-file index.js \
-            --bundle-output android/app/src/main/assets/index.android.bundle \
-            --assets-dest android/app/src/main/res \
-            > bundle_stdout.log 2> bundle_stderr.log
-          EXIT=$?
-          set -e
-          echo "=== STDOUT ===" && cat bundle_stdout.log
-          echo "=== STDERR ===" && cat bundle_stderr.log
-          if [ $EXIT -ne 0 ]; then
-            echo "::error title=BundleError::$(cat bundle_stderr.log bundle_stdout.log | tail -30 | tr '\n' ' ')"
-            exit 1
-          fi
-          BUNDLE_SIZE=$(wc -c < android/app/src/main/assets/index.android.bundle 2>/dev/null || echo 0)
-          echo "✓ Bundle OK: ${BUNDLE_SIZE} bytes"
-
-      - name: Upload bundle logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: bundle-logs
-          path: |
-            bundle_stdout.log
-            bundle_stderr.log
-          retention-days: 3
-          if-no-files-found: ignore
-
       - name: Generate Keystores
         run: |
           keytool -genkeypair -v -storetype PKCS12 \
@@ -96,10 +63,13 @@ jobs:
 
       - name: Build Release APK
         run: |
+          # Let Gradle handle JS bundling automatically (RN 0.73 plugin does this)
           cd android
-          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle.log | tail -100
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle.log
+          echo "Exit: ${PIPESTATUS[0]}"
         env:
           JAVA_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
+          NODE_ENV: production
 
       - name: Upload gradle log
         if: always()
@@ -107,30 +77,31 @@ jobs:
         with:
           name: gradle-log
           path: gradle.log
-          retention-days: 3
+          retention-days: 7
           if-no-files-found: ignore
 
       - name: Find and Copy APK
         run: |
-          echo "=== All APK files ==="
-          find android -name "*.apk" -type f -exec ls -lh {} \;
+          echo "=== Searching ALL APK files ==="
+          find android -name "*.apk" -type f 2>/dev/null | while read f; do
+            echo "  $f — $(wc -c < $f) bytes"
+          done
           echo ""
-          APK=$(find android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -1)
+          # Try release first, then any APK
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -1)
+          [ -z "$APK" ] && APK=$(find android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -1)
+          [ -z "$APK" ] && APK=$(find android -name "*.apk" 2>/dev/null | head -1)
           if [ -z "$APK" ]; then
-            echo "ERROR: No APK found anywhere"
-            find android -name "*.apk" 2>/dev/null || echo "Truly no APK"
+            echo "ERROR: No APK found. Gradle build may have failed silently."
+            echo "=== Last 50 lines of gradle.log ==="
+            tail -50 ../gradle.log 2>/dev/null || tail -50 gradle.log 2>/dev/null || echo "no gradle log"
             exit 1
           fi
           SIZE=$(wc -c < "$APK")
-          echo "Found APK: $APK"
-          echo "Size: ${SIZE} bytes ($(ls -lh $APK | awk '{print $5}'))"
-          # Accept any APK larger than 100KB (real APK must have native libs)
-          if [ "$SIZE" -lt 100000 ]; then
-            echo "ERROR: APK suspiciously small: ${SIZE} bytes"
-            exit 1
-          fi
+          echo "Found: $APK ($SIZE bytes)"
+          [ "$SIZE" -lt 100000 ] && echo "ERROR: APK too small ($SIZE bytes)" && exit 1
           cp "$APK" MobileCloud-release.apk
-          echo "✓ APK ready: $(ls -lh MobileCloud-release.apk | awk '{print $5}')"
+          echo "✓ APK ready: $(ls -lh MobileCloud-release.apk)"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
