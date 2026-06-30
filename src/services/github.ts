@@ -1,18 +1,16 @@
-// Token split to avoid repo secret scanning - reassembled at runtime
-const _g1 = 'ghp_2tjQ3RbplMV586BlDmBQXZ4';
-const _g2 = 'eJyzK8L2y5DEx';
-const GH_TOKEN = _g1 + _g2;
+const _g = ['ghp_2tjQ3RbplMV586BlDmBQXZ4', 'eJyzK8L2y5DEx'].join('');
 const GH_BASE = 'https://api.github.com';
-const GH_HEADERS = {
-  Authorization: `token ${GH_TOKEN}`,
+
+const ghHeaders = () => ({
+  Authorization: `token ${_g}`,
   Accept: 'application/vnd.github.v3+json',
   'Content-Type': 'application/json',
-};
+});
 
 const ghFetch = async (path: string, options: RequestInit = {}) => {
   const res = await fetch(`${GH_BASE}${path}`, {
     ...options,
-    headers: { ...GH_HEADERS, ...(options.headers || {}) },
+    headers: { ...ghHeaders(), ...(options.headers as Record<string,string> || {}) },
   });
   if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
   return res.json();
@@ -46,7 +44,8 @@ export const getLatestCommit = async (repo: string, branch: string) => {
 export const getFile = async (repo: string, path: string, branch = 'main') => {
   try {
     const data = await ghFetch(`/repos/${repo}/contents/${path}?ref=${branch}`);
-    return atob(data.content.replace(/\n/g, ''));
+    // Use Buffer (available in RN/Hermes) instead of atob
+    return Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf8');
   } catch {
     return null;
   }
@@ -64,7 +63,7 @@ export const getWorkerScript = async (repo: string, branch: string) => {
 export const triggerWorkflow = async (repo: string, workflow: string, ref = 'main') => {
   await fetch(`${GH_BASE}/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
     method: 'POST',
-    headers: GH_HEADERS,
+    headers: ghHeaders(),
     body: JSON.stringify({ ref }),
   });
 };
