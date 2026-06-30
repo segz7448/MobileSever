@@ -55,38 +55,37 @@ jobs:
       - name: Build Release APK
         run: |
           cd android
-          # --rerun-tasks forces fresh build, no cache
-          ./gradlew assembleRelease --no-daemon --rerun-tasks --stacktrace 2>&1 | tee ../gradle.log
+          set +e
+          ./gradlew assembleRelease --no-daemon --rerun-tasks --stacktrace > ../gradle_out.log 2>&1
+          GRADLE_EXIT=$?
+          set -e
+          echo "=== GRADLE EXIT: $GRADLE_EXIT ==="
+          echo "=== FULL GRADLE OUTPUT ==="
+          cat ../gradle_out.log
+          echo "=== END GRADLE OUTPUT ==="
+          if [ $GRADLE_EXIT -ne 0 ]; then
+            ERRMSG=$(tail -60 ../gradle_out.log | tr '\n' ' ' | cut -c1-2000)
+            echo "::error title=GradleError::${ERRMSG}"
+            exit 1
+          fi
         env:
           JAVA_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
-          NODE_ENV: production
-
-      - name: Upload gradle log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-log
-          path: gradle.log
-          retention-days: 7
-          if-no-files-found: ignore
 
       - name: Find and Copy APK
         run: |
-          echo "=== Searching ALL APK files ==="
-          find android -name "*.apk" -type f 2>/dev/null | while read f; do
-            echo "  $f — $(wc -c < $f) bytes"
+          echo "=== Searching for APKs ==="
+          find android -name "*.apk" -type f | while read f; do
+            echo "$f — $(wc -c < $f) bytes"
           done
           APK=$(find android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -1)
           [ -z "$APK" ] && APK=$(find android -name "*.apk" 2>/dev/null | head -1)
           if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"
-            echo "=== gradle.log tail ==="
-            tail -80 ../gradle.log 2>/dev/null || echo "no log"
+            echo "::error title=NoAPK::No APK file found after successful Gradle build"
             exit 1
           fi
           SIZE=$(wc -c < "$APK")
           echo "APK: $APK — ${SIZE} bytes"
-          [ "$SIZE" -lt 100000 ] && echo "ERROR: too small" && exit 1
+          [ "$SIZE" -lt 100000 ] && echo "::error title=APKTooSmall::${SIZE} bytes" && exit 1
           cp "$APK" MobileCloud-release.apk
           echo "✓ $(ls -lh MobileCloud-release.apk)"
 
