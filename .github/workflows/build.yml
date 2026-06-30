@@ -59,13 +59,17 @@ jobs:
           ./gradlew assembleRelease --no-daemon --rerun-tasks --stacktrace > ../gradle_out.log 2>&1
           GRADLE_EXIT=$?
           set -e
-          echo "=== GRADLE EXIT: $GRADLE_EXIT ==="
-          echo "=== FULL GRADLE OUTPUT ==="
-          cat ../gradle_out.log
-          echo "=== END GRADLE OUTPUT ==="
+
+          echo "=== GRADLE EXIT CODE: $GRADLE_EXIT ==="
+          echo "=== FIRST 80 LINES (root cause) ==="
+          head -80 ../gradle_out.log
+          echo "=== LAST 40 LINES ==="
+          tail -40 ../gradle_out.log
+
           if [ $GRADLE_EXIT -ne 0 ]; then
-            ERRMSG=$(tail -60 ../gradle_out.log | tr '\n' ' ' | cut -c1-2000)
-            echo "::error title=GradleError::${ERRMSG}"
+            # Grab lines containing FAILURE or error keywords for annotation
+            ROOT=$(grep -i "FAILURE\|Exception\|error\|Could not\|failed" ../gradle_out.log | head -20 | tr '\n' ' ' | cut -c1-2500)
+            echo "::error title=GradleRootCause::${ROOT}"
             exit 1
           fi
         env:
@@ -73,14 +77,14 @@ jobs:
 
       - name: Find and Copy APK
         run: |
-          echo "=== Searching for APKs ==="
+          echo "=== APK Search ==="
           find android -name "*.apk" -type f | while read f; do
             echo "$f — $(wc -c < $f) bytes"
           done
           APK=$(find android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -1)
           [ -z "$APK" ] && APK=$(find android -name "*.apk" 2>/dev/null | head -1)
           if [ -z "$APK" ]; then
-            echo "::error title=NoAPK::No APK file found after successful Gradle build"
+            echo "::error title=NoAPK::No APK found"
             exit 1
           fi
           SIZE=$(wc -c < "$APK")
