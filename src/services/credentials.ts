@@ -1,18 +1,20 @@
-import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
-// Simple XOR + base64 obfuscation (SecureStore handles the real security at OS level)
-const obfuscate = (text: string, key: string): string => {
+const KEY_STORAGE = 'mc_enc_key';
+
+const xorEncode = (text: string, key: string): string => {
   let result = '';
   for (let i = 0; i < text.length; i++) {
     result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
   }
-  return btoa(result);
+  // Base64 encode using Buffer (available in RN via Hermes)
+  return Buffer.from(result, 'binary').toString('base64');
 };
 
-const deobfuscate = (encoded: string, key: string): string => {
+const xorDecode = (encoded: string, key: string): string => {
   try {
-    const text = atob(encoded);
+    const text = Buffer.from(encoded, 'base64').toString('binary');
     let result = '';
     for (let i = 0; i < text.length; i++) {
       result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
@@ -24,10 +26,10 @@ const deobfuscate = (encoded: string, key: string): string => {
 };
 
 const getEncKey = async (): Promise<string> => {
-  let key = await SecureStore.getItemAsync('mc_enc_key');
+  let key = await AsyncStorage.getItem(KEY_STORAGE);
   if (!key) {
     key = Math.random().toString(36).repeat(4) + Date.now().toString(36);
-    await SecureStore.setItemAsync('mc_enc_key', key);
+    await AsyncStorage.setItem(KEY_STORAGE, key);
   }
   return key;
 };
@@ -38,7 +40,7 @@ export const saveCredential = async (
   data: Record<string, string>
 ): Promise<void> => {
   const key = await getEncKey();
-  const encrypted = obfuscate(JSON.stringify(data), key);
+  const encrypted = xorEncode(JSON.stringify(data), key);
   const { data: user } = await supabase.auth.getUser();
   const { error } = await supabase.from('credentials').insert({
     user_id: user.user?.id,
@@ -58,7 +60,7 @@ export const getCredentials = async (): Promise<any[]> => {
   if (error) throw error;
   return (data || []).map((c: any) => {
     try {
-      const decrypted = JSON.parse(deobfuscate(c.encrypted_data, key));
+      const decrypted = JSON.parse(xorDecode(c.encrypted_data, key));
       return { ...c, decrypted };
     } catch {
       return { ...c, decrypted: null };
