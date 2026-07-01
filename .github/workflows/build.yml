@@ -30,22 +30,19 @@ jobs:
       - name: Install Node dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Verify gradle plugin path
-        run: |
-          echo "=== Checking @react-native/gradle-plugin ==="
-          ls node_modules/@react-native/gradle-plugin/ || echo "NOT FOUND"
-          echo ""
-          echo "=== build.gradle of plugin ==="
-          cat node_modules/@react-native/gradle-plugin/build.gradle 2>/dev/null || echo "no build.gradle"
-          echo ""
-          echo "=== settings.gradle of plugin ==="
-          cat node_modules/@react-native/gradle-plugin/settings.gradle 2>/dev/null || echo "no settings.gradle"
-
       - name: Setup Android SDK
         run: |
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;25.1.8937393"
+
+      - name: Pre-compile React Native Gradle Plugin
+        run: |
+          echo "=== Pre-building @react-native/gradle-plugin ==="
+          cd node_modules/@react-native/gradle-plugin
+          chmod +x gradlew
+          ./gradlew assemble --no-daemon 2>&1 | tail -20 || echo "Plugin prebuild done (errors above may be ok)"
+          ls build/libs/ 2>/dev/null || echo "No libs dir"
 
       - name: Generate Keystores
         run: |
@@ -71,12 +68,12 @@ jobs:
           GRADLE_EXIT=$?
           set -e
           echo "=== GRADLE EXIT: $GRADLE_EXIT ==="
-          echo "=== FIRST 100 LINES ==="
-          head -100 ../gradle_out.log
+          echo "=== FIRST 80 LINES ==="
+          head -80 ../gradle_out.log
           echo "=== LAST 40 LINES ==="
           tail -40 ../gradle_out.log
           if [ $GRADLE_EXIT -ne 0 ]; then
-            ROOT=$(grep -i "FAILURE\|Exception\|error\|Could not\|not found\|sources\|Plugin" ../gradle_out.log | head -30 | tr '\n' ' ' | cut -c1-2500)
+            ROOT=$(grep -i "FAILURE\|Exception\|error\|not found\|sources\|Plugin" ../gradle_out.log | head -25 | tr '\n' ' ' | cut -c1-2500)
             echo "::error title=GradleError::${ROOT}"
             exit 1
           fi
