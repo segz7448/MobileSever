@@ -66,16 +66,17 @@ jobs:
           GRADLE_EXIT=$?
           set -e
           echo "=== EXIT: $GRADLE_EXIT ==="
-          # Print last 100 lines where the actual error is
-          echo "=== LAST 100 LINES (actual failure) ==="
-          tail -100 ../gradle_out.log
+          echo "=== KOTLIN ERRORS (e: lines) ==="
+          grep "^e: \|error:\|^w: .*error\|compileReleaseKotlin\|CompilationError" ../gradle_out.log | head -40
+          echo "=== FAILURE BLOCK ==="
+          grep -A 15 "FAILURE:" ../gradle_out.log | head -25
+          echo "=== LAST 30 LINES ==="
+          tail -30 ../gradle_out.log
           if [ $GRADLE_EXIT -ne 0 ]; then
-            # Capture lines around FAILURE: keyword
-            FAIL=$(grep -A 20 "FAILURE:" ../gradle_out.log | head -25 | tr '\n' ' ' | cut -c1-2500)
-            echo "::error title=GradleFAILURE::${FAIL}"
-            # Also capture any Exception lines
-            EXC=$(grep -B2 "Exception\|Could not\|error:" ../gradle_out.log | tail -30 | tr '\n' ' ' | cut -c1-2000)
-            echo "::error title=GradleException::${EXC}"
+            KOTLIN_ERR=$(grep "^e: " ../gradle_out.log | head -10 | tr '\n' ' ' | cut -c1-2000)
+            FAIL=$(grep -A 8 "FAILURE:" ../gradle_out.log | head -10 | tr '\n' ' ' | cut -c1-1000)
+            echo "::error title=KotlinErrors::${KOTLIN_ERR}"
+            echo "::error title=GradleFailure::${FAIL}"
             exit 1
           fi
         env:
