@@ -10,14 +10,13 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.soloader.SoLoader
-import expo.modules.ApplicationLifecycleDispatcher
-import expo.modules.ReactNativeHostWrapper
 
 class MainApplication : Application(), ReactApplication {
+
     override val reactNativeHost: ReactNativeHost =
-        ReactNativeHostWrapper(this, object : DefaultReactNativeHost(this) {
+        object : DefaultReactNativeHost(this) {
             override fun getPackages(): List<ReactPackage> =
-                PackageList(this).packages.apply {}
+                PackageList(this).packages
 
             override fun getJSMainModuleName(): String = "index"
 
@@ -25,7 +24,7 @@ class MainApplication : Application(), ReactApplication {
 
             override val isNewArchEnabled: Boolean = false
             override val isHermesEnabled: Boolean = true
-        })
+        }
 
     override val reactHost: ReactHost
         get() = getDefaultReactHost(applicationContext, reactNativeHost)
@@ -33,6 +32,5 @@ class MainApplication : Application(), ReactApplication {
     override fun onCreate() {
         super.onCreate()
         SoLoader.init(this, false)
-        ApplicationLifecycleDispatcher.onApplicationCreate(this)
     }
 }
