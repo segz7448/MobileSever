@@ -42,6 +42,22 @@ jobs:
           chmod +x gradlew
           ./gradlew assemble --no-daemon 2>&1 | tail -5
 
+      - name: Bundle JS (pre-build — guarantees bundle is in APK)
+        run: |
+          mkdir -p android/app/src/main/assets
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res
+          BSIZE=$(wc -c < android/app/src/main/assets/index.android.bundle)
+          echo "✓ Bundle size: ${BSIZE} bytes"
+          if [ "$BSIZE" -lt 50000 ]; then
+            echo "::error title=BundleTooSmall::Bundle is ${BSIZE} bytes - likely failed"
+            exit 1
+          fi
+
       - name: Generate Keystores
         run: |
           keytool -genkeypair -v -storetype PKCS12 \
@@ -66,32 +82,34 @@ jobs:
           GRADLE_EXIT=$?
           set -e
           echo "=== EXIT: $GRADLE_EXIT ==="
-          echo "=== KOTLIN ERRORS (e: lines) ==="
-          grep "^e: \|error:\|^w: .*error\|compileReleaseKotlin\|CompilationError" ../gradle_out.log | head -40
-          echo "=== FAILURE BLOCK ==="
-          grep -A 15 "FAILURE:" ../gradle_out.log | head -25
-          echo "=== LAST 30 LINES ==="
-          tail -30 ../gradle_out.log
+          echo "=== KOTLIN ERRORS ==="
+          grep "^e: \|error:" ../gradle_out.log | head -20
+          echo "=== FAILURE ==="
+          grep -A 10 "FAILURE:" ../gradle_out.log | head -15
+          echo "=== LAST 20 LINES ==="
+          tail -20 ../gradle_out.log
           if [ $GRADLE_EXIT -ne 0 ]; then
-            KOTLIN_ERR=$(grep "^e: " ../gradle_out.log | head -10 | tr '\n' ' ' | cut -c1-2000)
-            FAIL=$(grep -A 8 "FAILURE:" ../gradle_out.log | head -10 | tr '\n' ' ' | cut -c1-1000)
-            echo "::error title=KotlinErrors::${KOTLIN_ERR}"
-            echo "::error title=GradleFailure::${FAIL}"
+            ERRS=$(grep "^e: \|FAILURE:\|Exception" ../gradle_out.log | head -15 | tr '\n' ' ' | cut -c1-2000)
+            echo "::error title=BuildError::${ERRS}"
             exit 1
           fi
         env:
           JAVA_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
 
-      - name: Find and Copy APK
+      - name: Verify bundle is inside APK
         run: |
-          find android -name "*.apk" -type f | while read f; do echo "$f — $(wc -c < $f) bytes"; done
           APK=$(find android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -1)
-          [ -z "$APK" ] && APK=$(find android -name "*.apk" 2>/dev/null | head -1)
-          [ -z "$APK" ] && echo "::error title=NoAPK::No APK found" && exit 1
-          SIZE=$(wc -c < "$APK")
-          [ "$SIZE" -lt 100000 ] && echo "::error title=APKTooSmall::${SIZE} bytes" && exit 1
+          [ -z "$APK" ] && echo "::error ::No APK found" && exit 1
+          echo "APK: $APK ($(wc -c < $APK) bytes)"
+          # Check bundle is inside APK
+          if unzip -l "$APK" | grep -q "index.android.bundle"; then
+            echo "✓ JS bundle IS inside APK"
+          else
+            echo "::error title=NoBundleInAPK::JS bundle missing from APK - app will crash on launch"
+            exit 1
+          fi
           cp "$APK" MobileCloud-release.apk
-          echo "✓ $(ls -lh MobileCloud-release.apk)"
+          echo "✓ APK ready: $(ls -lh MobileCloud-release.apk)"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
