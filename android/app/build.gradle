@@ -5,18 +5,17 @@ plugins {
 }
 
 react {
-    // Empty - RN Gradle plugin will use the pre-bundled JS placed by workflow
-    // at android/app/src/main/assets/index.android.bundle
+    // RN Gradle plugin uses pre-bundled JS at android/app/src/main/assets/index.android.bundle
 }
 
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
-    namespace "com.mobilecloud.app"
+    namespace "com.mobilecloud"
 
     defaultConfig {
-        applicationId "com.mobilecloud.app"
+        applicationId "com.mobilecloud"
         minSdk rootProject.ext.minSdkVersion
         targetSdk rootProject.ext.targetSdkVersion
         versionCode 1
