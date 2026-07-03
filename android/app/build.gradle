@@ -5,9 +5,8 @@ plugins {
 }
 
 react {
-    // Use pre-built JS bundle placed by the workflow's bundle step
-    bundleInRelease = false
-    bundleInDebug = false
+    // Empty - RN Gradle plugin will use the pre-bundled JS placed by workflow
+    // at android/app/src/main/assets/index.android.bundle
 }
 
 android {
