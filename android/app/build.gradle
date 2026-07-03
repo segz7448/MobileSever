@@ -5,7 +5,9 @@ plugins {
 }
 
 react {
-    // RN Gradle plugin handles JS bundling
+    // Use pre-built JS bundle placed by the workflow's bundle step
+    bundleInRelease = false
+    bundleInDebug = false
 }
 
 android {
