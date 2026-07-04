@@ -13,6 +13,6 @@ class MainActivity : ReactActivity() {
         DefaultReactActivityDelegate(this, mainComponentName, false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(null) // Pass null to avoid state restoration crash
+        super.onCreate(savedInstanceState)
     }
 }
