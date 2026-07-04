@@ -8,7 +8,6 @@ const xorEncode = (text: string, key: string): string => {
   for (let i = 0; i < text.length; i++) {
     result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
   }
-  // Base64 encode using Buffer (available in RN via Hermes)
   return Buffer.from(result, 'binary').toString('base64');
 };
 
@@ -20,9 +19,7 @@ const xorDecode = (encoded: string, key: string): string => {
       result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
     }
     return result;
-  } catch {
-    return '';
-  }
+  } catch { return ''; }
 };
 
 const getEncKey = async (): Promise<string> => {
@@ -34,41 +31,28 @@ const getEncKey = async (): Promise<string> => {
   return key;
 };
 
-export const saveCredential = async (
-  type: string,
-  label: string,
-  data: Record<string, string>
-): Promise<void> => {
+export const saveCredential = async (type: string, label: string, data: Record<string, string>) => {
   const key = await getEncKey();
   const encrypted = xorEncode(JSON.stringify(data), key);
   const { data: user } = await supabase.auth.getUser();
   const { error } = await supabase.from('credentials').insert({
-    user_id: user.user?.id,
-    type,
-    label,
-    encrypted_data: encrypted,
+    user_id: user.user?.id, type, label, encrypted_data: encrypted,
   });
   if (error) throw error;
 };
 
-export const getCredentials = async (): Promise<any[]> => {
+export const getCredentials = async () => {
   const key = await getEncKey();
-  const { data, error } = await supabase
-    .from('credentials')
-    .select('*')
-    .order('created_at', { ascending: false });
+  const { data, error } = await supabase.from('credentials').select('*').order('created_at', { ascending: false });
   if (error) throw error;
   return (data || []).map((c: any) => {
     try {
-      const decrypted = JSON.parse(xorDecode(c.encrypted_data, key));
-      return { ...c, decrypted };
-    } catch {
-      return { ...c, decrypted: null };
-    }
+      return { ...c, decrypted: JSON.parse(xorDecode(c.encrypted_data, key)) };
+    } catch { return { ...c, decrypted: null }; }
   });
 };
 
-export const deleteCredential = async (id: string): Promise<void> => {
+export const deleteCredential = async (id: string) => {
   const { error } = await supabase.from('credentials').delete().eq('id', id);
   if (error) throw error;
 };
